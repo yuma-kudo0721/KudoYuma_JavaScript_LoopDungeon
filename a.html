@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <title>ダンジョン</title>
+  <style>
+    body {
+      font-family: monospace;
+    }
+
+    #container {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 20px;
+    }
+
+    canvas {
+      background: #eee;
+    }
+
+    #log {
+      width: 260px;
+      height: 420px;
+      border: 2px solid #333;
+      background: #111;
+      color: rgb(255, 255, 255);
+      padding: 8px;
+      font-size: 14px;
+      overflow-y: auto;
+      text-align: left;
+    }
+
+    #status {
+      margin-bottom: 8px;
+      padding: 6px;
+      border: 1px solid #444;
+      color: rgb(255, 255, 255);
+      font-size: 14px;
+    }
+
+    #log h3 {
+      margin: 0 0 6px 0;
+      color: #fff;
+      font-size: 16px;
+    }
+
+    #logText div {
+      line-height: 1.4;
+      margin-bottom: 1.5px;
+    }
+  </style>
+</head>
+
+<body>
+  <h2 style="text-align:center;">矢印キーで移動 / Aキーで攻撃</h2>
+
+
+  <div id="container">
+    <canvas id="game"></canvas>
+
+    <div id="log">
+      <h3>ステータス</h3>
+      <div id="status"></div>
+      <h3>ログ</h3>
+      <div id="logText"></div>
+    </div>
+
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const logDiv = document.getElementById("logText");
+    const tileSize = 40;
+
+    // ======================
+    // Dungeon クラス
+    // ======================
+    class Dungeon {
+      constructor(tileSize) {
+        this.tileSize = tileSize;
+        this.map = [];
+        this.width = 0;
+        this.height = 0;
+      }
+
+      generate(player) {
+        let stairPlaced = false;
+        let doorPlaced = false;
+
+        this.width = Math.floor(Math.random() * 10) + 10;
+        this.height = Math.floor(Math.random() * 8) + 8;
+
+        canvas.width = this.width * this.tileSize;
+        canvas.height = this.height * this.tileSize;
+
+        this.map = [];
+
+        // マップ生成
+        for (let y = 0; y < this.height; y++) {
+          let row = [];
+          for (let x = 0; x < this.width; x++) {
+            if (y === 0 || y === this.height - 1 || x === 0 || x === this.width - 1) {
+              row.push(1); // 壁
+            }
+            else {
+              row.push(Math.random() < 0.2 ? 1 : 0); // 内側20%壁
+            }
+          }
+          this.map.push(row);
+        }
+
+        // 階段配置
+        while (!stairPlaced) {
+          const x = Math.floor(Math.random() * this.width);
+          const y = Math.floor(Math.random() * this.height);
+
+          if (
+            this.map[y][x] === 0 &&
+            this.hasOpenNeighbor(x, y) &&
+            !(x === player.x && y === player.y)
+          ) {
+            this.map[y][x] = 2; // 階段
+            stairPlaced = true;
+          }
+        }
+
+        //ドア
+        while (!doorPlaced) {
+          const x = Math.floor(Math.random() * this.width);
+          const y = Math.floor(Math.random() * this.height);
+
+          if (
+            this.map[y][x] === 0 &&
+            this.hasOpenNeighbor(x, y) &&
+            !(x === player.x && y === player.y) &&
+            !this.isStair(x, y)
+          ) {
+            this.map[y][x] = 3; // 階段
+            doorPlaced = true;
+          }
+        }
+      }
+
+      draw(ctx, player) {
+        for (let y = 0; y < this.height; y++) {
+          for (let x = 0; x < this.width; x++) {
+
+            const dx = x - player.x;
+            const dy = y - player.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > viewRadius) {
+              // 見えない場所
+              ctx.fillStyle = 'black';
+              ctx.fillRect(
+                x * this.tileSize,
+                y * this.tileSize,
+                this.tileSize,
+                this.tileSize
+              );
+              continue;
+            }
+            /*ctx.strokeRect(
+              x * this.tileSize,
+              y * this.tileSize,
+              this.tileSize,
+              this.tileSize
+            );*/
+
+            // タイル種類で画像切り替え
+            let img;
+            if (this.map[y][x] === 1) img = dungeonImages.wall;
+            else if (this.map[y][x] === 2) img = dungeonImages.stair;
+            else if (this.map[y][x] === 3) img = dungeonImages.door;
+            else img = dungeonImages.floor;
+
+            ctx.drawImage(
+              img,
+              x * this.tileSize,
+              y * this.tileSize,
+              this.tileSize,
+              this.tileSize
+            );
+
+          }
+        }
+      }
+
+      getRandomFloorPosition() {
+        while (true) {
+          const x = Math.floor(Math.random() * this.width);
+          const y = Math.floor(Math.random() * this.height);
+
+
+          if (this.map[y][x] === 0) {
+            return { x, y };
+          }
+        }
+      }
+
+      hasOpenNeighbor(x, y) {
+        return (
+          this.map[y - 1][x] === 0 ||
+          this.map[y + 1][x] === 0 ||
+          this.map[y][x - 1] === 0 ||
+          this.map[y][x + 1] === 0
+        );
+      }
+
+      isWall(x, y) {
+        return this.map[y][x] === 1;
+      }
+
+      isStair(x, y) {
+        return this.map[y][x] === 2;
+      }
+
+      isDoor(x, y) {
+        return this.map[y][x] === 3;
+      }
+    }
+    // ======================
+    // ShopFloor クラス
+    // ======================
+    class ShopFloor {
+
+      constructor(tileSize) {
+        this.tileSize = tileSize;
+        this.width = 10;  // 固定
+        this.height = 8;  // 固定
+
+
+        this.map = [
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+          [1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        ];
+      }
+
+      generate(player) {
+        // キャンバスサイズ設定
+        canvas.width = this.width * this.tileSize;
+        canvas.height = this.height * this.tileSize;
+        // ドアの位置は固定（例えば右下）
+        this.map[6][8] = 2; // ドア
+      }
+
+      draw(ctx, player) {
+        for (let y = 0; y < this.height; y++) {
+          for (let x = 0; x < this.width; x++) {
+
+            let img;
+            if (this.map[y][x] === 1) img = dungeonImages.wall;
+            else if (this.map[y][x] === 2) img = dungeonImages.stair;
+            else if (this.map[y][x] === 3) img = dungeonImages.door;
+            else img = dungeonImages.floor;
+
+            ctx.drawImage(
+              img,
+              x * this.tileSize,
+              y * this.tileSize,
+              this.tileSize,
+              this.tileSize
+            );
+          }
+        }
+      }
+
+      getRandomFloorPosition() {
+        while (true) {
+          const x = Math.floor(Math.random() * this.width);
+          const y = Math.floor(Math.random() * this.height);
+
+          if (this.map[y][x] === 0) {
+            return { x, y };
+          }
+        }
+      }
+
+      isWall(x, y) { return this.map[y][x] === 1; }
+      isStair(x, y) { return this.map[y][x] === 2; }
+      isDoor(x, y) { return this.map[y][x] === 3; }
+    }
+
+    // ======================
+    // Player クラス
+    // ======================
+    class Player {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.hp = 100;
+        this.attackPower = 15;
+        this.myturn = true;
+        this.alive = true;
+        this.inventory = [];
+        this.maxInventory = 3;
+      }
+
+      move(nx, ny, dungeon) {
+        if (!dungeon.isWall(nx, ny) &&
+          !enemies.some(e => e.alive && e.x === nx && e.y === ny)) {
+          this.x = nx;
+          this.y = ny;
+        }
+
+        items.forEach(item => {
+          if (!item.pickedUp && item.x === this.x && item.y === this.y) {
+            item.pickup(this);
+          }
+        });
+
+      }
+
+      useItemBySlot(slot) {
+        if (!this.inventory[slot]) {
+          addLog("そのスロットは空だ");
+          return false;
+        }
+
+        const item = this.inventory[slot];
+        item.use(this);
+        this.inventory.splice(slot, 1);
+        return true;
+      }
+
+      takeDamage(damage) {
+        this.hp -= damage;
+
+        if (this.hp <= 0) {
+          this.alive = false;
+          gameState = "gameover";
+
+        }
+      }
+
+      takeHeal(heal) {
+        this.hp += heal;
+      }
+
+      draw(ctx) {
+        ctx.fillStyle = 'blue';
+        ctx.fillRect(
+          this.x * tileSize,
+          this.y * tileSize,
+          tileSize,
+          tileSize
+        );
+      }
+
+    }
+
+    // ======================
+    // Enemy クラス
+    // ======================
+    class Enemy {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.hp = 30;
+        this.attackPower = 10;
+        this.myturn = true;
+        this.alive = true;
+      }
+
+      takeDamage(damage) {
+        this.hp -= damage;
+
+        if (this.hp <= 0) {
+          this.alive = false;
+        }
+      }
+
+      update(player, dungeon) {
+        let ex = this.x;
+        let ey = this.y;
+
+        if (Math.random() < 0.5) {
+          if (player.x > ex) ex++;
+          else if (player.x < ex) ex--;
+        } else {
+          if (player.y > ey) ey++;
+          else if (player.y < ey) ey--;
+        }
+
+        // 壁でなく、プレイヤーでもなく、他の敵とも被っていなければ移動
+        if (
+          !dungeon.isWall(ex, ey) &&
+          !(ex === player.x && ey === player.y) &&
+          !enemies.some(e => e !== this && e.x === ex && e.y === ey)
+        ) {
+          this.x = ex;
+          this.y = ey;
+        }
+
+      }
+
+      draw(ctx) {
+        ctx.fillStyle = 'red';
+        ctx.fillRect(
+          this.x * tileSize,
+          this.y * tileSize,
+          tileSize,
+          tileSize
+        );
+      }
+
+    }
+
+    class Item {
+      constructor(x, y, type, data) {
+        this.x = x;
+        this.y = y;
+        this.type = type;
+        this.data = data;   // 回復量や効果値
+        this.pickedUp = false;
+      }
+
+
+      draw(ctx) {
+        const img = itemImages[this.type];
+
+        if (!img) return;
+
+        ctx.drawImage(
+          img,
+          this.x * tileSize,
+          this.y * tileSize,
+          tileSize,
+          tileSize
+        );
+      }
+
+      pickup(player) {
+        if (player.inventory.length >= player.maxInventory) {
+          addLog("これ以上持てない！");
+          return;
+        }
+
+        player.inventory.push(this);
+        this.pickedUp = true;
+        addLog(`${this.type} を拾った`);
+      }
+
+
+      use(player) {
+        switch (this.type) {
+          case '回復薬':
+            player.hp += this.data.healHp;
+            addLog(`HPが ${this.data.healHp} 回復した`, "#7CFC00");
+            break;
+
+          case '怪力薬':
+            player.attackPower += this.data.power;
+            addLog(`攻撃力が ${this.data.power} 上がった`);
+            break;
+
+          case '光の玉':
+            viewRadius += this.data.flashPower;
+            addLog("周囲が明るくなった", "yellow");
+            break;
+          case '爆弾':
+            player.hp += this.data.healHp;
+            addLog(`HPが ${this.data.healHp} 回復した`, "#7CFC00");
+            break;
+        }
+      }
+
+    }
+
+    // ======================
+    // HealItem クラス
+    // ======================
+    /*class HealItem {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.healHp = 15;
+        this.used = false;
+      }
+
+      draw(ctx) {
+        const cx = this.x * tileSize + tileSize / 2;
+        const cy = this.y * tileSize + tileSize / 2;
+        const r = tileSize / 2 - 4; // 少し余白
+
+        ctx.fillStyle = 'green';
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    
+    class FlashItem {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.flashPower = 5;
+        this.used = false;
+      }
+
+      draw(ctx) {
+        const cx = this.x * tileSize + tileSize / 2;
+        const cy = this.y * tileSize + tileSize / 2;
+        const r = tileSize / 2 - 4;
+
+        ctx.fillStyle = 'yellow';
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }*/
+
+
+
+    // ======================
+    // ゲーム管理
+    // ======================
+    //startPlayerX = Math.floor(Math.random() * 10);
+    //startPlayerY = Math.floor(Math.random() * 8);
+    const itemImages = {
+      回復薬: (() => {
+        const img = new Image();
+        img.src = 'heal.png';
+        return img;
+      })(),
+      怪力薬: (() => {
+        const img = new Image();
+        img.src = 'power.png';
+        return img;
+      })(),
+      光の玉: (() => {
+        const img = new Image();
+        img.src = 'flash.png';
+        return img;
+      })()
+    };
+
+    const dungeonImages = {
+      floor: (() => {
+        const img = new Image();
+        img.src = 'floor.png';
+        return img;
+      })(),
+      wall: (() => {
+        const img = new Image();
+        img.src = 'wall.png';
+        return img;
+      })(),
+      stair: (() => {
+        const img = new Image();
+        img.src = 'stair.png';
+        return img;
+      })(),
+      door: (() => {
+        const img = new Image();
+        img.src = 'door.png';
+        return img;
+      })()
+    };
+
+
+    // アイテム
+    const itemTypes = {
+      回復薬: { color: 'green', healHp: 15 },
+      怪力薬: { color: 'red', power: 5 },
+      光の玉: { color: 'yellow', flashPower: 1.5 }
+    };
+
+    let gameState = "playing";
+    let floorNumber = 0;
+    let viewRadius = 3;
+    let startRadius = viewRadius
+    // プレイヤー生成
+    const player = new Player(0, 0);
+
+    // ダンジョン生成
+    let dungeon = new Dungeon(tileSize);
+
+    dungeon.generate(player);
+
+
+    const enemies = [];
+    const ENEMY_COUNT = 3;
+    const items = [];
+
+    // プレイヤーをランダム配置（階段と被らない位置）
+    playerRandomGenerate();
+
+    function randomCount(num) {
+      return Math.floor(Math.random() * (num + 1));
+    }
+
+    let healCount = randomCount(5);
+    let powerCount = randomCount(1);
+    let flashCount = randomCount(3);
+
+
+    // アイテム生成
+    generateItems('回復薬', healCount);
+    generateItems('怪力薬', powerCount);
+    generateItems('光の玉', flashCount);
+
+    // 敵生成
+    generateEnemies();
+
+    function playerRandomGenerate() {
+      const playerPos = dungeon.getRandomFloorPosition();
+      player.x = playerPos.x;
+      player.y = playerPos.y;
+    }
+
+    function generateItems(type, count) {
+      for (let i = 0; i < count; i++) {
+        let pos;
+        do {
+          pos = dungeon.getRandomFloorPosition();
+        } while (
+          (pos.x === player.x && pos.y === player.y) ||
+          items.some(item => item.x === pos.x && item.y === pos.y)
+        );
+
+        items.push(new Item(pos.x, pos.y, type, itemTypes[type]));
+      }
+    }
+
+    function generateEnemies() {
+      enemies.length = 0;
+
+      for (let i = 0; i < ENEMY_COUNT; i++) {
+        let pos;
+        do {
+          pos = dungeon.getRandomFloorPosition();
+        } while (
+          (pos.x === player.x && pos.y === player.y) ||
+          enemies.some(e => e.x === pos.x && e.y === pos.y)
+        );
+
+        const enemy = new Enemy(pos.x, pos.y);
+        enemies.push(enemy);
+      }
+    }
+
+
+    function nextFloor() {
+      dungeon = new Dungeon(tileSize);
+      floorNumber++;
+      items.length = 0;
+      document.getElementById("logText").innerHTML = "";
+      viewRadius = startRadius;
+      addLog(`フロア ${floorNumber} に進んだ`);
+      dungeon.generate(player);
+      playerRandomGenerate();
+      generateEnemies();
+
+      let healCount = randomCount(5);
+      let powerCount = randomCount(2);
+      let flashCount = randomCount(3);
+      generateItems('回復薬', healCount);
+      generateItems('怪力薬', powerCount);
+      generateItems('光の玉', flashCount);
+      draw();
+    }
+
+    function goShopping() {
+      dungeon = new ShopFloor(tileSize);
+      items.length = 0;
+      enemies.length = 0;
+      document.getElementById("logText").innerHTML = "";
+      viewRadius = startRadius;
+      addLog(`店に進んだ`);
+      dungeon.generate(player);
+      playerRandomGenerate();
+      draw();
+    }
+
+    function restartGame() {
+      gameState = "playing";
+      viewRadius = startRadius;
+      items.length = 0;
+      floorNumber = 0;
+      player.hp = 100;
+      player.attackPower = 15;
+      player.alive = true;
+      player.myturn = true;
+      dungeon.generate(player);
+      playerRandomGenerate();
+      generateEnemies();
+      player.inventory = [];
+      let healCount = randomCount(5);
+      let powerCount = randomCount(2);
+      let flashCount = randomCount(3);
+      generateItems('回復薬', healCount);
+      generateItems('怪力薬', powerCount);
+      generateItems('光の玉', flashCount);
+      document.getElementById("logText").innerHTML = "";
+      addLog("リトライ！");
+      draw();
+    }
+
+    function addLog(message, color = "white") {
+      const log = document.getElementById("logText");
+
+      const div = document.createElement("div");
+      div.textContent = message;
+      div.style.color = color;
+
+      log.appendChild(div);
+
+      // 最大10
+      while (log.children.length > 10) {
+        log.removeChild(log.firstChild);
+      }
+
+      log.parentElement.scrollTop = log.parentElement.scrollHeight;
+    }
+
+    function updateStatus() {
+      const status = document.getElementById("status");
+
+      const slots = ['Q', 'W', 'E'];
+
+      const itemLines = slots.map((key, i) => {
+        const item = player.inventory[i];
+        return `${key}: ${item ? item.type : '---'}`;
+      }).join("<br>");
+
+      status.innerHTML = `
+    HP: ${player.hp}<br>
+    攻撃力: ${player.attackPower}<br>
+    フロア: ${floorNumber}<br>
+    <hr>
+    アイテム<br>
+    ${itemLines}
+  `;
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      dungeon.draw(ctx, player);
+      player.draw(ctx);
+
+      enemies.forEach(enemy => {
+        const dx = enemy.x - player.x;
+        const dy = enemy.y - player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (enemy.alive && dist <= viewRadius) {
+          enemy.draw(ctx);
+        }
+      });
+
+      items.forEach(item => {
+        const dx = item.x - player.x;
+        const dy = item.y - player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (!item.pickedUp && dist <= viewRadius) item.draw(ctx);
+      });
+
+      updateStatus();
+
+      if (gameState === "gameover") {
+        drawGameOver();
+      }
+
+    }
+
+    function attackEnemy(player) {
+      if (!player.myturn) return;
+
+      const target = enemies.find(e =>
+        e.alive &&
+        Math.abs(player.x - e.x) + Math.abs(player.y - e.y) === 1
+      );
+
+      if (!target) {
+        addLog("敵が近くにいない");
+        return;
+      }
+
+      let probability = randomCount(100);
+      player.myturn = false;
+
+      if (probability <= 5) {
+        // クリティカル
+        target.takeDamage(player.attackPower * 2);
+        addLog(`クリティカル！敵に ${player.attackPower * 2} ダメージ！`, "#c77dff");
+      }
+      else if (probability <= 80) {
+        // 通常攻撃
+        target.takeDamage(player.attackPower);
+        addLog(`敵に ${player.attackPower} ダメージ！`, "#ff4d4d");
+      }
+      else {
+        // 攻撃外れ
+        addLog("攻撃が外れた！");
+      }
+
+      if (!target.alive) {
+        addLog("敵を倒した！");
+      }
+
+      draw();
+    }
+
+    function attackPlayer(player, enemy) {
+      const dx = Math.abs(player.x - enemy.x);
+      const dy = Math.abs(player.y - enemy.y);
+
+      if (dx + dy !== 1 || !enemy.alive || !player.alive) {
+        return;
+      }
+
+      let probability = randomCount(100);
+
+      if (probability <= 65) {
+        player.takeDamage(enemy.attackPower);
+        addLog(`自分に ${enemy.attackPower} ダメージ！`, "#ffa500");
+      } else {
+        addLog("身をかわした！");
+      }
+    }
+
+    function updateEnemies() {
+      let aliveEnemies = enemies.filter(e => e.alive);
+      aliveEnemies.forEach(enemy => {
+        attackPlayer(player, enemy);
+        enemy.update(player, dungeon);
+      });
+
+      player.myturn = true;
+      draw();
+    }
+
+    function drawGameOver() {
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "white";
+      ctx.font = "48px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2);
+      ctx.font = "20px sans-serif";
+      ctx.fillText("Rキーでリトライ", canvas.width / 2, canvas.height / 2 + 40);
+    }
+
+    document.addEventListener('keydown', e => {
+
+      let acted = false; //行動したか
+      let nx = player.x;
+      let ny = player.y;
+
+      if (gameState === "gameover") {
+        if (e.key === "r" || e.key === "R") {
+          restartGame();
+        }
+        return;
+      }
+
+      // アイテム使用
+      if (e.key === 'q' || e.key === 'Q') {
+        if (player.useItemBySlot(0)) acted = true;
+      }
+      if (e.key === 'w' || e.key === 'W') {
+        if (player.useItemBySlot(1)) acted = true;
+      }
+      if (e.key === 'e' || e.key === 'E') {
+        if (player.useItemBySlot(2)) acted = true;
+      }
+
+
+
+      if (e.key === 'ArrowUp') ny--;
+      if (e.key === 'ArrowDown') ny++;
+      if (e.key === 'ArrowLeft') nx--;
+      if (e.key === 'ArrowRight') nx++;
+
+      // 攻撃
+      if (e.key === 'a' || e.key === 'A') {
+        attackEnemy(player);
+        acted = true;
+      }
+      // 移動
+      else if (nx !== player.x || ny !== player.y) {
+        player.move(nx, ny, dungeon);
+        acted = true;
+      }
+
+      if (acted) {
+        updateEnemies();
+      }
+
+
+      if (dungeon.isStair(player.x, player.y)) {
+        nextFloor();
+      }
+
+      if (dungeon.isDoor(player.x, player.y)) {
+        goShopping();
+      }
+
+    });
+    const firstImage = dungeonImages.floor;
+    firstImage.onload = () => {
+      draw();
+    };
+
+
+  </script>
+</body>
+
+</html>
