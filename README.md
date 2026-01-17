@@ -24,5 +24,3 @@ JavaScriptとCanvasを用い、ターン制処理・視界制限・簡易敵AI�
 - アイテム効果の多様化
 - ダンジョン生成ロジックの改善
 - 階段が壁に囲まれるケースへの対策として、壁破壊アイテム（爆弾）の追加
-
-https://yuma-kudo0721.github.io/KudoYuma_JavaScript_LoopDungeon/LoopDungeon.html)
