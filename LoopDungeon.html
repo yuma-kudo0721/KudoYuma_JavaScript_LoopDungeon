@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <title>ダンジョン</title>
+  <title>ループダンジョン</title>
   <style>
     body {
       font-family: monospace;
@@ -249,7 +249,7 @@
         // キャンバスサイズ設定
         canvas.width = this.width * this.tileSize;
         canvas.height = this.height * this.tileSize;
-        // ドアの位置は固定（例えば右下）
+        // ドアの位置は固定
         this.map[6][8] = 2; // ドア
       }
 
@@ -527,6 +527,8 @@
     // ======================
     //startPlayerX = Math.floor(Math.random() * 10);
     //startPlayerY = Math.floor(Math.random() * 8);
+
+    //画像
     const itemImages = {
       回復薬: (() => {
         const img = new Image();
@@ -671,6 +673,7 @@
       draw();
     }
 
+    //店エリア
     function goShopping() {
       dungeon = new ShopFloor(tileSize);
       items.length = 0;
@@ -840,6 +843,7 @@
       player.myturn = true;
       draw();
     }
+
 
     function drawGameOver() {
       ctx.fillStyle = "rgba(0,0,0,0.7)";
